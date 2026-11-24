@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum VerificationSource {
+  SELF_REPORTED
+  RESUME_EXTRACTED
+  PROJECT_VERIFIED
+  ASSESSMENT_VERIFIED
+}
+
+enum RoadmapDuration {
+  THIRTY_DAYS
+  SIXTY_DAYS
+  NINETY_DAYS
+}
+
+enum RoadmapStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ProjectStatus {
+  SAVED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InterviewCategory {
+  TECHNICAL
+  HR
+  BEHAVIORAL
+  ROLE_SPECIFIC
+  PROJECT_BASED
+}
+
+enum InterviewDifficulty {
+  ENTRY
+  MID
+  SENIOR
+}
+
+enum ActivityType {
+  RESUME_UPLOADED
+  JOB_ANALYZED
+  MATCH_RUN
+  SKILL_UPDATED
+  ROADMAP_GENERATED
+  MILESTONE_COMPLETED
+  PROJECT_SAVED
+  PROJECT_COMPLETED
+  INTERVIEW_COMPLETED
+  ASSESSMENT_TAKEN
+}
+
+model User {
+  id              String           @id @default(uuid())
+  email           String           @unique
+  passwordHash    String
+  fullName        String
+  targetRole      String?
+  experienceLevel String?          @default("ENTRY") // ENTRY, MID, SENIOR
+  bio             String?
+  role            Role             @default(USER)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  resumes         Resume[]
+  userSkills      UserSkill[]
+  jobDescriptions JobDescription[]
+  matchReports    MatchReport[]
+  roadmaps        CareerRoadmap[]
+  projects        ProjectRecommendation[]
+  interviews      InterviewSession[]
+  interviewAnswers InterviewAnswer[]
+  assessments     Assessment[]
+  activities      Activity[]
+
+  @@index([email])
+}
+
+model Resume {
+  id           String        @id @default(uuid())
+  userId       String
+  title        String
+  fileName     String
+  fileUrl      String?
+  fileType     String        // application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  rawText      String
+  parsedData   Json          // Structured profile: contact, education, experience, projects, skills, certifications
+  isPrimary    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchReports MatchReport[]
+
+  @@index([userId])
+}
+
+model Skill {
+  id             String        @id @default(uuid())
+  name           String        @unique
+  normalizedName String        @unique
+  category       String        @default("Technical") // Frontend, Backend, Database, Cloud/DevOps, AI/ML, Soft Skills, Tools
+  createdAt      DateTime      @default(now())
+
+  userSkills     UserSkill[]
+  assessments    Assessment[]
+
+  @@index([normalizedName])
+  @@index([category])
+}
+
+model UserSkill {
+  id                 String             @id @default(uuid())
+  userId             String
+  skillId            String
+  proficiencyLevel   ProficiencyLevel   @default(INTERMEDIATE)
+  verificationSource VerificationSource @default(SELF_REPORTED)
+  yearsExperience    Float?             @default(1.0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill              Skill              @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@index([skillId])
+}
+
+model JobDescription {
+  id              String        @id @default(uuid())
+  userId          String
+  title           String
+  company         String?
+  experienceLevel String?       @default("Mid-Level")
+  rawText         String
+  parsedData      Json          // requiredSkills, preferredSkills, softSkills, experienceYears, educationRequirements, responsibilities, keywords
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchReports    MatchReport[]
+
+  @@index([userId])
+}
+
+model MatchReport {
+  id                   String         @id @default(uuid())
+  userId               String
+  resumeId             String
+  jobDescriptionId     String
+  overallMatchScore    Float          // 0 - 100
+  skillMatchScore      Float          // 0 - 100
+  experienceMatchScore Float          // 0 - 100
+  educationMatchScore  Float          // 0 - 100
+  matchedSkills        Json           // Array of matched skill strings
+  partialSkills        Json           // Array of partial skill strings
+  missingSkills        Json           // Array of missing skill strings
+  breakdown            Json           // Detailed explainability metrics
+  recommendations      Json           // Prioritized action items to improve score
+  createdAt            DateTime       @default(now())
+
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume               Resume         @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  jobDescription       JobDescription @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([resumeId])
+  @@index([jobDescriptionId])
+}
+
+model CareerRoadmap {
+  id            String             @id @default(uuid())
+  userId        String
+  title         String
+  targetRole    String
+  durationDays  Int                @default(60) // 30, 60, or 90
+  overview      String
+  status        RoadmapStatus      @default(IN_PROGRESS)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestones    RoadmapMilestone[]
+
+  @@index([userId])
+}
+
+model RoadmapMilestone {
+  id            String         @id @default(uuid())
+  roadmapId     String
+  title         String
+  description   String
+  orderIndex    Int            @default(1)
+  estimatedDays Int            @default(7)
+  topics        Json           // array of strings
+  resources     Json           // array of { title, url, type }
+  projects      Json           // array of { title, description }
+  isCompleted   Boolean        @default(false)
+  completedAt   DateTime?
+
+  roadmap       CareerRoadmap  @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+
+  @@index([roadmapId])
+}
+
+model ProjectRecommendation {
+  id                  String            @id @default(uuid())
+  userId              String
+  title               String
+  problemStatement    String
+  technologies        Json              // array of strings
+  skillsDeveloped     Json              // array of strings
+  difficulty          ProjectDifficulty @default(INTERMEDIATE)
+  implementationSteps Json              // array of steps
+  expectedOutcome     String
+  portfolioValue      String
+  status              ProjectStatus     @default(SAVED)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model InterviewSession {
+  id              String              @id @default(uuid())
+  userId          String
+  title           String
+  category        InterviewCategory   @default(TECHNICAL)
+  targetRole      String
+  difficulty      InterviewDifficulty @default(MID)
+  overallScore    Float?
+  feedbackSummary String?
+  createdAt       DateTime            @default(now())
+
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions       InterviewQuestion[]
+
+  @@index([userId])
+}
+
+model InterviewQuestion {
+  id                String            @id @default(uuid())
+  sessionId         String
+  questionText      String
+  orderIndex        Int               @default(1)
+  idealAnswerPoints Json              // key points looked for
+  rubric            Json              // criteria weights
+
+  session           InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers           InterviewAnswer[]
+
+  @@index([sessionId])
+}
+
+model InterviewAnswer {
+  id                     String            @id @default(uuid())
+  questionId             String
+  userId                 String
+  userText               String
+  score                  Float             // 0 - 100
+  relevanceScore         Float             // 0 - 100
+  technicalScore         Float             // 0 - 100
+  clarityScore           Float             // 0 - 100
+  depthScore             Float             // 0 - 100
+  feedback               String
+  strengths              Json?
+  weaknesses             Json?
+  improvementSuggestions String
+  createdAt              DateTime          @default(now())
+
+  question               InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user                   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([userId])
+}
+
+model Assessment {
+  id          String   @id @default(uuid())
+  userId      String
+  skillId     String
+  score       Float    // 0 - 100
+  maxScore    Float    @default(100)
+  passed      Boolean  @default(false)
+  completedAt DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill       Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([skillId])
+}
+
+model Activity {
+  id          String       @id @default(uuid())
+  userId      String
+  type        ActivityType
+  title       String
+  description String
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
